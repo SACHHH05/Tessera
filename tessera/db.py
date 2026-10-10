@@ -128,6 +128,11 @@ def add_tasks(conn: sqlite3.Connection, project_id: int, tasks: list[dict[str, A
     conn.commit()
 
 
+def set_task_status(conn: sqlite3.Connection, task_id: int, status: str) -> None:
+    conn.execute("UPDATE tasks SET status = ? WHERE id = ?", (status, task_id))
+    conn.commit()
+
+
 def list_tasks(conn: sqlite3.Connection, project_id: int) -> list[dict[str, Any]]:
     rows = conn.execute("SELECT * FROM tasks WHERE project_id = ? ORDER BY id", (project_id,)).fetchall()
     return [dict(r) for r in rows]
