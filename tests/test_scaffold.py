@@ -75,3 +75,21 @@ def test_relative_workspace_path_still_reports_per_test_results(tmp_path, monkey
     ws = Workspace.create(__import__("pathlib").Path("workspaces"), "project-1")  # relative, like try_dev.py
     result = LocalRunner().run_pytest(__import__("pathlib").Path("workspaces/project-1"))
     assert result.ok and len(result.tests) >= 4
+
+
+def test_failures_carry_the_last_http_response(tmp_path):
+    ws = Workspace.create(tmp_path, "p6")
+    ws.write_files(
+        {"tests/test_req_009.py": "def test_x(client):\n    r = client.get('/api/nothing-here')\n    assert r.status_code == 200\n"},
+        patterns=TEST_PATTERNS,
+    )
+    result = LocalRunner().run_pytest(ws.root)
+    detail = result.details["tests/test_req_009.py::test_x"]
+    assert "LAST RESPONSE: GET /api/nothing-here -> 404" in detail
+
+
+def test_existing_workspace_receives_scaffold_updates(tmp_path):
+    ws = Workspace.create(tmp_path, "p7")
+    (ws.root / "tests/conftest.py").write_text("# stale\n")
+    again = Workspace.create(tmp_path, "p7", fresh=False)
+    assert "LAST RESPONSE" in again.read("tests/conftest.py")

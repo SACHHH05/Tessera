@@ -22,6 +22,11 @@ from tessera.scaffold_spec import FILE_PATTERNS
 
 SCAFFOLD_DIR = Path(__file__).resolve().parent.parent / "scaffold"
 TEST_PATTERNS = [r"tests/test_[a-z0-9_]+\.py"]
+# Files the scaffold owns. They are re-copied into an existing workspace so scaffold fixes reach old projects.
+SCAFFOLD_OWNED = [
+    "app/__init__.py", "app/auth.py", "app/db.py", "app/main.py", "app/migrations/000_users.sql",
+    "tests/conftest.py", "tests/test_scaffold_auth.py", "pytest.ini", "requirements.txt",
+]
 
 
 class PathNotAllowed(ValueError):
@@ -47,6 +52,10 @@ class Workspace:
             shutil.copytree(
                 SCAFFOLD_DIR, root, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.db")
             )
+        else:
+            for rel in SCAFFOLD_OWNED:
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(SCAFFOLD_DIR / rel, root / rel)
         return cls(root)
 
     def write_files(self, files: dict[str, str], patterns: list[str] | None = None) -> list[str]:

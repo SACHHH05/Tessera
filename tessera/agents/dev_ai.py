@@ -43,6 +43,11 @@ Coding rules:
   so the final URL matches the contract exactly (for example /api/invoices/{{invoice_id}}).
 - Migrations: CREATE TABLE IF NOT EXISTS, user_id INTEGER NOT NULL REFERENCES users(id) on per-user tables,
   and reference tables from earlier migrations by their real names.
+- Use the EXACT request field and query parameter names from the contract. If a name is a Python keyword or
+  not a valid identifier (for example `from`), keep the contract name through an alias:
+  `date_from: str = Query(alias="from")` or `Field(alias=...)`. Never rename it.
+- Pydantic v2 style only: `field_validator`, `model_validator`, `Field(min_length=..., max_length=...)`.
+  Never `@validator`, `min_items` or `.dict()`.
 - Do not write tests.
 
 Output format. Each file exactly like this, nothing else outside the blocks:
