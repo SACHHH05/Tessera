@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -51,6 +52,7 @@ class UsageTracker:
 
     budget: int
     by_role: dict[str, dict[str, float]] = field(default_factory=dict)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     @property
     def total_tokens(self) -> int:
@@ -61,10 +63,11 @@ class UsageTracker:
             raise BudgetExceeded(f"Token budget of {self.budget} reached ({self.total_tokens} used).")
 
     def add(self, res: LLMResult) -> None:
-        r = self.by_role.setdefault(res.role, {"calls": 0, "tokens": 0, "latency_s": 0.0})
-        r["calls"] += 1
-        r["tokens"] += res.total_tokens
-        r["latency_s"] += res.latency_s
+        with self._lock:
+            r = self.by_role.setdefault(res.role, {"calls": 0, "tokens": 0, "latency_s": 0.0})
+            r["calls"] += 1
+            r["tokens"] += res.total_tokens
+            r["latency_s"] += res.latency_s
 
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)

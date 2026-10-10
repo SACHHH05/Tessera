@@ -121,6 +121,7 @@ class RunResult:
     stdout: str
     stderr: str
     tests: dict[str, str] = field(default_factory=dict)  # "tests/test_x.py::test_y" -> passed|failed|error|skipped
+    details: dict[str, str] = field(default_factory=dict)  # same keys -> short failure message
 
     @property
     def ok(self) -> bool:
@@ -152,6 +153,24 @@ def parse_junit(xml_text: str) -> dict[str, str]:
     return out
 
 
+def parse_junit_details(xml_text: str, limit: int = 600) -> dict[str, str]:
+    """Map each failed or errored test to the end of its failure message."""
+    out: dict[str, str] = {}
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return out
+    for case in root.iter("testcase"):
+        bad = case.find("failure") if case.find("failure") is not None else case.find("error")
+        if bad is None:
+            continue
+        module = (case.get("classname") or "").replace(".", "/")
+        key = f"{module}.py::{case.get('name')}" if module else str(case.get("name"))
+        text = (bad.text or bad.get("message") or "").strip()
+        out[key] = text[-limit:]
+    return out
+
+
 class LocalRunner:
     """Dev-only. Do NOT point this at untrusted generated code in the hosted demo."""
 
@@ -172,8 +191,8 @@ class LocalRunner:
             )
         except subprocess.TimeoutExpired as e:
             return RunResult(124, e.stdout or "", f"timeout after {timeout_s}s")
-        tests = parse_junit(report.read_text()) if report.exists() else {}
-        return RunResult(p.returncode, p.stdout, p.stderr, tests)
+        xml = report.read_text() if report.exists() else ""
+        return RunResult(p.returncode, p.stdout, p.stderr, parse_junit(xml), parse_junit_details(xml))
 
 
 # TODO(day 3-4): ContreeRunner using `contree-sdk` (docs: sandboxes/start/python-quickstart).

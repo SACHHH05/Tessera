@@ -20,7 +20,7 @@ from .. import db
 from ..fileblocks import parse_file_blocks
 from ..llm import LLMClient
 from ..sandbox import Workspace
-from ..scaffold_spec import SCAFFOLD_SPEC
+from ..scaffold_spec import API_CONVENTIONS, SCAFFOLD_SPEC
 
 MAX_FIX_ROUNDS = 2
 MAX_REPLY_TOKENS = 8000
@@ -29,6 +29,7 @@ DEV_SYSTEM = f"""\
 You are the Developer on a small software team. You write production-quality Python for one task.
 
 {SCAFFOLD_SPEC}
+{API_CONVENTIONS}
 Coding rules:
 - Write ONLY the files assigned to you. Complete files, no placeholders, no TODOs.
 - Use only the standard library, fastapi and pydantic (v2). No other packages.
