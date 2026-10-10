@@ -87,3 +87,23 @@ def test_json_schema_is_sent_as_response_format():
     llm.chat("main", [{"role": "user", "content": "x"}], json_schema={"type": "object"}, schema_name="reqs")
     rf = fake.calls[0]["response_format"]
     assert rf["type"] == "json_schema" and rf["json_schema"]["name"] == "reqs"
+
+
+def test_parse_file_blocks():
+    from tessera.fileblocks import parse_file_blocks
+
+    text = (
+        "Here you go\n=== FILE: app/routers/a.py ===\n```python\nx = '\\n'\n```\n=== END FILE ===\n"
+        "=== FILE: app/migrations/001_a.sql ===\nCREATE TABLE t(id INT);\n=== END FILE ===\n"
+    )
+    files = parse_file_blocks(text)
+    assert files["app/routers/a.py"] == "x = '\\n'\n"
+    assert files["app/migrations/001_a.sql"].startswith("CREATE TABLE")
+    assert parse_file_blocks("no blocks here") == {}
+
+
+def test_parse_file_blocks_tolerates_missing_end_marker():
+    from tessera.fileblocks import parse_file_blocks
+
+    text = "=== FILE: app/routers/a.py ===\nx = 1\n=== FILE: app/routers/b.py ===\ny = 2\n"
+    assert parse_file_blocks(text) == {"app/routers/a.py": "x = 1\n", "app/routers/b.py": "y = 2\n"}

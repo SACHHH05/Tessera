@@ -10,7 +10,7 @@ import sqlite3
 from typing import Any
 
 from .. import db
-from ..llm import LLMClient, LLMRequestError
+from ..llm import LLMClient
 from ..tavily import TavilyClient
 
 QUESTIONS_SCHEMA: dict[str, Any] = {
@@ -56,6 +56,9 @@ REQUIREMENTS_SYSTEM = (
     "appears in GET /api/invoices'. No vague criteria such as 'is user friendly'.\n"
     "- Cover: sign up and login, data isolation between users, the core create/read/update/delete "
     "flows for the main entity, input validation, and one report or export when it fits the idea.\n"
+    "- The app can only use FastAPI, SQLite and the Python standard library. Do NOT require email "
+    "sending, PDF generation, payments, file uploads, background jobs, or any third-party service. "
+    "Use CSV or JSON for exports and reports.\n"
     "- If market research is provided, use it to include features users expect, but do not copy "
     "competitors.\n"
     "- List the assumptions you made about anything the client did not say.\n"
@@ -71,17 +74,8 @@ def _call_json(
     name: str,
     max_tokens: int = 4000,
 ) -> Any:
-    """Ask for schema-constrained JSON; fall back to prompt-only JSON if the server rejects it."""
-    try:
-        res = llm.chat(role, messages, json_schema=schema, schema_name=name, max_tokens=max_tokens)
-    except LLMRequestError:
-        res = llm.chat(role, messages, max_tokens=max_tokens)
-    if not res.text.strip():
-        raise RuntimeError(
-            f"{role} returned an empty reply (model may have used all {max_tokens} tokens reasoning). "
-            "Raise max_tokens."
-        )
-    return res.json()
+    """Schema-constrained JSON with fallbacks (see LLMClient.chat_json)."""
+    return llm.chat_json(role, messages, schema, name, max_tokens)
 
 
 def clarifying_questions(llm: LLMClient, idea: str) -> list[str]:

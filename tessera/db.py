@@ -32,6 +32,13 @@ CREATE TABLE IF NOT EXISTS tasks (
     title TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'todo' -- todo | doing | done | blocked
 );
+CREATE TABLE IF NOT EXISTS artifacts (
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    kind TEXT NOT NULL,                 -- contract | plan | ...
+    content TEXT NOT NULL,              -- JSON
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (project_id, kind)
+);
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id INTEGER NOT NULL REFERENCES projects(id),
@@ -93,6 +100,37 @@ def set_requirement_status(
         (status, detail, project_id, code),
     )
     conn.commit()
+
+
+def save_artifact(conn: sqlite3.Connection, project_id: int, kind: str, content: Any) -> None:
+    conn.execute(
+        "INSERT INTO artifacts (project_id, kind, content, updated_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(project_id, kind) DO UPDATE SET content = excluded.content, "
+        "updated_at = excluded.updated_at",
+        (project_id, kind, json.dumps(content), time.time()),
+    )
+    conn.commit()
+
+
+def get_artifact(conn: sqlite3.Connection, project_id: int, kind: str) -> Any | None:
+    row = conn.execute(
+        "SELECT content FROM artifacts WHERE project_id = ? AND kind = ?", (project_id, kind)
+    ).fetchone()
+    return json.loads(row["content"]) if row else None
+
+
+def add_tasks(conn: sqlite3.Connection, project_id: int, tasks: list[dict[str, Any]]) -> None:
+    for t in tasks:
+        conn.execute(
+            "INSERT INTO tasks (project_id, requirement_code, owner, title) VALUES (?, ?, 'dev', ?)",
+            (project_id, ",".join(t.get("requirement_codes", [])), t["title"]),
+        )
+    conn.commit()
+
+
+def list_tasks(conn: sqlite3.Connection, project_id: int) -> list[dict[str, Any]]:
+    rows = conn.execute("SELECT * FROM tasks WHERE project_id = ? ORDER BY id", (project_id,)).fetchall()
+    return [dict(r) for r in rows]
 
 
 def log_event(

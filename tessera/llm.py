@@ -147,3 +147,34 @@ class LLMClient:
                 self.on_call(res)
             return res
         raise RuntimeError(f"Token Factory call failed after {retries + 1} attempts: {last_err}")
+
+    def chat_json(
+        self,
+        role: str,
+        messages: list[dict[str, Any]],
+        schema: dict[str, Any],
+        name: str,
+        max_tokens: int = 4000,
+    ) -> Any:
+        """Ask for schema-constrained JSON.
+
+        Falls back to prompt-only JSON if the server rejects the schema, and asks the model
+        once more if its reply is not valid JSON.
+        """
+        try:
+            res = self.chat(role, messages, json_schema=schema, schema_name=name, max_tokens=max_tokens)
+        except LLMRequestError:
+            res = self.chat(role, messages, max_tokens=max_tokens)
+        if not res.text.strip():
+            raise RuntimeError(
+                f"{role} returned an empty reply (model may have used all {max_tokens} tokens "
+                "reasoning). Raise max_tokens."
+            )
+        try:
+            return res.json()
+        except json.JSONDecodeError:
+            retry = messages + [
+                {"role": "assistant", "content": res.text},
+                {"role": "user", "content": "That was not valid JSON. Reply with only the JSON object."},
+            ]
+            return self.chat(role, retry, max_tokens=max_tokens).json()
