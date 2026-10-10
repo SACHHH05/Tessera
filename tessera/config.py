@@ -16,7 +16,7 @@ ROLE_TIER = {
     "main": "ultra",  # account manager: client chat, requirements
     "tl": "super",  # team lead: planning, standups, re-planning
     "dev": "super",  # senior developer: writes code
-    "tester": "nano",  # tester: writes and runs tests
+    "tester": "super",  # tester: writes tests; Nano made too many mistakes (see FEEDBACK.md)
     "status": "nano",  # standup and status summaries
 }
 
@@ -48,7 +48,7 @@ class Settings:
             tavily_api_key=os.environ.get("TAVILY_API_KEY", ""),
             db_path=os.environ.get("TESSERA_DB_PATH", "tessera.db"),
             max_rounds=int(os.environ.get("TESSERA_MAX_ROUNDS", "3")),
-            max_tokens_per_project=int(os.environ.get("TESSERA_MAX_TOKENS_PER_PROJECT", "400000")),
+            max_tokens_per_project=int(os.environ.get("TESSERA_MAX_TOKENS_PER_PROJECT", "900000")),
         )
 
     def model_for(self, role: str) -> str:

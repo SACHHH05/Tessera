@@ -181,3 +181,51 @@ def test_unusable_tests_leave_the_requirement_untested(tmp_path):
     out = tester_ai.verify_project(conn, model, ws, LocalRunner(), pid)
     assert out["verdicts"]["REQ-003"]["status"] == "untested"
     assert out["summary"]["passing"] == 2 and out["summary"]["failing"] == 0
+
+
+def test_fixture_mistakes_are_caught_before_running():
+    bad_param = "def test_a(client, headers):\n    assert client.get('/x', headers=headers)\n"
+    assert any("`headers` is not a fixture" in p for p in tester_ai.check_test_file("t.py", bad_param))
+    helper = "def make():\n    return client.post('/x')\n\ndef test_a(client):\n    assert make()\n"
+    assert any("`client` is used in make but is not defined there" in p for p in tester_ai.check_test_file("t.py", helper))
+    ok = "def make(client):\n    return client.post('/x')\n\ndef test_a(client, login):\n    assert make(client) is not None\n"
+    assert tester_ai.check_test_file("t.py", ok) == []
+
+
+def _three_req_replies(third):
+    return {
+        "REQ-001": [block("tests/test_req_001.py", GOOD_001)],
+        "REQ-002": [block("tests/test_req_002.py", GOOD_002)],
+        "REQ-003": third,
+    }
+
+
+def test_tester_fixes_its_own_wrong_test_and_the_requirement_passes(tmp_path):
+    conn, pid, ws = project(tmp_path)
+    fixed = "VERDICT: TEST_WRONG\nREASON: contract says another user's record is a 404, not 403\n" + block("tests/test_req_003.py", GOOD_003)
+    model, _ = llm_for(_three_req_replies([block("tests/test_req_003.py", WRONG_003), fixed]))
+    out = tester_ai.verify_project(conn, model, ws, LocalRunner(), pid)
+    assert out["verdicts"]["REQ-003"]["status"] == "passing"
+    assert out["reviews"]["REQ-003"]["verdict"] == "TEST_WRONG"
+    assert out["summary"]["passing"] == 3
+    assert "404" in ws.read("tests/test_req_003.py")
+    kinds = [e["kind"] for e in db.events_since(conn, pid)]
+    assert "test_review" in kinds
+
+
+def test_when_the_app_is_wrong_the_failure_stays_and_carries_the_reason(tmp_path):
+    conn, pid, ws = project(tmp_path)
+    app_wrong = "VERDICT: APP_WRONG\nREASON: criteria say other users get 403, app answers 404"
+    model, _ = llm_for(_three_req_replies([block("tests/test_req_003.py", WRONG_003), app_wrong]))
+    out = tester_ai.verify_project(conn, model, ws, LocalRunner(), pid)
+    v = out["verdicts"]["REQ-003"]
+    assert v["status"] == "failing" and "[APP_WRONG]" in v["detail"] and "criteria say" in v["detail"]
+    assert "403" in ws.read("tests/test_req_003.py")  # the test was left as written
+
+
+def test_a_bad_fix_is_not_trusted(tmp_path):
+    conn, pid, ws = project(tmp_path)
+    cheat = "VERDICT: TEST_WRONG\nREASON: x\n" + block("tests/test_req_003.py", "from app.db import connect\ndef test_x(client):\n    assert connect()\n")
+    model, _ = llm_for(_three_req_replies([block("tests/test_req_003.py", WRONG_003), cheat]))
+    out = tester_ai.verify_project(conn, model, ws, LocalRunner(), pid)
+    assert out["reviews"]["REQ-003"]["verdict"] == "UNKNOWN" and out["verdicts"]["REQ-003"]["status"] == "failing"

@@ -23,7 +23,8 @@ from ..llm import LLMClient
 from ..sandbox import TEST_PATTERNS, Runner, RunResult, Workspace
 from ..scaffold_spec import API_CONVENTIONS, TESTER_FIXTURES
 
-MAX_REPLY_TOKENS = 6000
+MAX_REPLY_TOKENS = 10000
+ATTEMPTS = 3
 WORKERS = 4
 
 TESTER_SYSTEM = f"""\
@@ -41,7 +42,10 @@ Rules:
   or someone else's record. Use clearly invalid input to trigger validation errors, nothing borderline.
 - Assert status codes and fields the contract or conventions guarantee. Do not assert error wording,
   field order, or response fields nobody promised.
-- Each test is independent and starts from an empty database. Keep tests short and readable.
+- Always put the response body in status assertions so failures explain themselves, for example
+  `assert r.status_code == 201, r.text`.
+- Each test is independent and starts from an empty database. Keep the file small: at most 8 tests, each under
+  25 lines, no long comments, and share setup through small helper functions that take `client` as a parameter.
 - For data isolation, create data as one user and check a second user cannot see, change or delete it.
 
 Output exactly one file, in this format and nothing else outside it:
@@ -72,16 +76,43 @@ def build_prompt(requirement: dict[str, Any], contract: dict[str, Any]) -> str:
         focus = "This requirement is delivered by the scaffold's signup/login API described above."
     else:
         focus = "ENDPOINTS FOR THIS REQUIREMENT:\n" + json.dumps(primary, indent=1)
-    others = [f"{e['method']} {e['path']}" for e in contract["endpoints"] if e not in primary]
+    others = [e for e in contract["endpoints"] if e not in primary]
     return (
         f"REQUIREMENT {code}: {requirement['title']}\n"
         f"ACCEPTANCE CRITERIA: {requirement['acceptance']}\n\n"
         f"{focus}\n\n"
-        f"OTHER ENDPOINTS YOU MAY CALL TO SET UP DATA: {', '.join(others) or '(none)'}\n"
-        f"FULL REQUEST DETAILS FOR THOSE: {json.dumps([e for e in contract['endpoints'] if e not in primary], indent=1)}\n\n"
+        f"OTHER ENDPOINTS YOU MAY CALL TO SET UP DATA:\n{json.dumps(others, indent=1) if others else '(none)'}\n\n"
         f"DATA MODEL:\n{json.dumps(contract['entities'], indent=1)}\n\n"
         f"Write {test_path(code)}."
     )
+
+
+ALLOWED_FIXTURES = {"client", "login", "tmp_path", "monkeypatch"}
+FIXTURE_NAMES = {"client", "login"}
+
+
+def _fixture_problems(tree: ast.AST) -> list[str]:
+    """Catch the mistakes a quick run would only show as NameError or 'fixture not found'."""
+    problems: list[str] = []
+
+    def visit(node: ast.AST, scope: set[str], fn: str = "module level") -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            fn = node.name
+            params = {a.arg for a in node.args.args + node.args.kwonlyargs}
+            if node.name.startswith("test_"):
+                for p in sorted(params - ALLOWED_FIXTURES):
+                    problems.append(f"{node.name}: parameter `{p}` is not a fixture; the only fixtures are client and login")
+            scope = scope | params
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in FIXTURE_NAMES and node.id not in scope:
+            problems.append(
+                f"`{node.id}` is used in {fn} but is not defined there; add it as a parameter of {fn} "
+                "and pass it in from the test"
+            )
+        for child in ast.iter_child_nodes(node):
+            visit(child, scope, fn)
+
+    visit(tree, set())
+    return sorted(set(problems))
 
 
 def check_test_file(path: str, content: str) -> list[str]:
@@ -98,6 +129,7 @@ def check_test_file(path: str, content: str) -> list[str]:
             names = [node.module or ""]
         if any(n == "app" or n.startswith("app.") for n in names):
             problems.append("do not import from `app`; test only through the HTTP API with the fixtures")
+    problems += _fixture_problems(tree)
     tests = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")]
     if not tests:
         problems.append("no test functions (def test_...)")
@@ -118,7 +150,7 @@ def write_test(llm: LLMClient, requirement: dict[str, Any], contract: dict[str, 
     ]
     problems: list[str] = []
     content = ""
-    for attempt in range(2):
+    for attempt in range(ATTEMPTS):
         res = llm.chat("tester", messages, temperature=0.2, max_tokens=MAX_REPLY_TOKENS)
         files = parse_file_blocks(res.text)
         content = next(iter(files.values()), "") if len(files) == 1 else files.get(path, "")
@@ -135,6 +167,68 @@ def write_test(llm: LLMClient, requirement: dict[str, Any], contract: dict[str, 
             {"role": "user", "content": "Problems:\n- " + "\n- ".join(problems) + f"\nSend the corrected {path}."},
         ]
     return {"code": code, "path": path, "content": "", "problems": problems}
+
+
+REVIEW_SYSTEM = f"""\
+You are the QA engineer who wrote the test file below. It failed against the real app. Decide who is wrong,
+using only the contract, the conventions and the acceptance criteria. You still have not seen the code.
+
+{TESTER_FIXTURES}
+{API_CONVENTIONS}
+The TEST is wrong if it expects something the contract, conventions or acceptance criteria never promised
+(an invented field, endpoint, status code, token, message), misuses the fixtures, sends unrealistic input,
+or contradicts itself. The APP is wrong if the test asks for exactly what the contract or acceptance criteria
+promise and the app answered differently (wrong status code, a rule not enforced, data visible to the wrong user).
+When unsure, say the app is wrong only if you can point to the sentence in the contract or criteria that it breaks.
+
+Reply with the first line either `VERDICT: TEST_WRONG` or `VERDICT: APP_WRONG`, then one line `REASON: ...`.
+If TEST_WRONG, follow with the complete corrected file as
+=== FILE: tests/test_req_NNN.py ===
+<content>
+=== END FILE ===
+"""
+
+
+def parse_verdict(text: str) -> str:
+    m = re.search(r"VERDICT:\s*(TEST_WRONG|APP_WRONG)", text)
+    return m.group(1) if m else "UNKNOWN"
+
+
+def review_failure(
+    llm: LLMClient, requirement: dict[str, Any], contract: dict[str, Any], test_source: str, failures: str
+) -> dict[str, Any]:
+    """The Tester re-reads one failing requirement. Returns {"verdict", "reason", "content" (if fixed)}."""
+    path = test_path(requirement["code"])
+    prompt = (
+        build_prompt(requirement, contract)
+        + f"\n\nYOUR CURRENT TEST FILE:\n{test_source}\n\nFAILURES FROM THE REAL RUN:\n{failures}\n"
+    )
+    res = llm.chat(
+        "tester",
+        [{"role": "system", "content": REVIEW_SYSTEM}, {"role": "user", "content": prompt}],
+        temperature=0.1,
+        max_tokens=MAX_REPLY_TOKENS,
+    )
+    verdict = parse_verdict(res.text)
+    reason = (re.search(r"REASON:\s*(.+)", res.text) or [None, ""])[1].strip()
+    out: dict[str, Any] = {"verdict": verdict, "reason": reason, "content": ""}
+    if verdict == "TEST_WRONG":
+        files = parse_file_blocks(res.text)
+        content = next(iter(files.values()), "") if files else ""
+        if content and not check_test_file(path, content):
+            out["content"] = content
+        else:
+            out["verdict"] = "UNKNOWN"  # a fix that does not pass our own checks is not trusted
+    return out
+
+
+def failure_text(result: RunResult, code: str, limit: int = 3) -> str:
+    items = [
+        f"{k.split('::')[-1]}: {result.details.get(k, o)}"
+        for k, o in result.tests.items()
+        if code_from_path(k) == code and o != "passed"
+    ]
+    return "\n---\n".join(items[:limit]) or "(no detail captured)"
 
 
 def grade(requirements: list[dict[str, Any]], written: dict[str, dict[str, Any]], result: RunResult) -> dict[str, dict[str, str]]:
@@ -168,6 +262,47 @@ def grade(requirements: list[dict[str, Any]], written: dict[str, dict[str, Any]]
     return verdicts
 
 
+def review_and_repair(
+    conn: sqlite3.Connection,
+    llm: LLMClient,
+    ws: Workspace,
+    runner: Runner,
+    project_id: int,
+    reqs: list[dict[str, Any]],
+    contract: dict[str, Any],
+    written: dict[str, dict[str, Any]],
+    result: RunResult,
+    verdicts: dict[str, dict[str, str]],
+) -> tuple[RunResult, dict[str, dict[str, str]], dict[str, dict[str, Any]]]:
+    """The Tester re-reads every failing requirement and fixes its own test when the test was wrong."""
+    failing = [r for r in reqs if verdicts[r["code"]]["status"] == "failing" and written.get(r["code"], {}).get("content")]
+    reviews: dict[str, dict[str, Any]] = {}
+    if not failing:
+        return result, verdicts, reviews
+    db.log_event(conn, project_id, "status", "tester", {"message": f"Re-checking {len(failing)} failing tests for mistakes of my own."})
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        outs = list(pool.map(
+            lambda r: review_failure(llm, r, contract, written[r["code"]]["content"], failure_text(result, r["code"])),
+            failing,
+        ))
+    fixes: dict[str, str] = {}
+    for r, out in zip(failing, outs):
+        reviews[r["code"]] = out
+        db.log_event(conn, project_id, "test_review", "tester", {"code": r["code"], "verdict": out["verdict"], "reason": out["reason"]})
+        if out["content"]:
+            written[r["code"]]["content"] = out["content"]
+            fixes[test_path(r["code"])] = out["content"]
+    if fixes:
+        ws.write_files(fixes, patterns=TEST_PATTERNS)
+        db.save_artifact(conn, project_id, "tests", {w["path"]: w["content"] for w in written.values() if not w["problems"]})
+        result = runner.run_pytest(ws.root)
+        verdicts = grade(reqs, written, result)
+    for code, out in reviews.items():
+        if verdicts[code]["status"] == "failing":
+            verdicts[code]["detail"] = f"[{out['verdict']}] {out['reason']} | " + verdicts[code]["detail"]
+    return result, verdicts, reviews
+
+
 def verify_project(
     conn: sqlite3.Connection, llm: LLMClient, ws: Workspace, runner: Runner, project_id: int
 ) -> dict[str, Any]:
@@ -188,10 +323,44 @@ def verify_project(
 
     result = runner.run_pytest(ws.root)
     verdicts = grade(reqs, written, result)
+
+    result, verdicts, reviews = review_and_repair(conn, llm, ws, runner, project_id, reqs, contract, written, result, verdicts)
     for r in reqs:
         v = verdicts[r["code"]]
         db.set_requirement_status(conn, project_id, r["code"], v["status"], v["detail"])
         db.log_event(conn, project_id, "test", "tester", {"code": r["code"], **v})
     summary = db.verified_summary(conn, project_id)
     db.log_event(conn, project_id, "status", "tester", {"message": f"{summary['passing']} of {summary['total']} requirements verified passing.", **summary})
-    return {"verdicts": verdicts, "summary": summary, "run": result}
+    return {"verdicts": verdicts, "summary": summary, "run": result, "reviews": reviews}
+
+
+def rerun(
+    conn: sqlite3.Connection, ws: Workspace, runner: Runner, project_id: int, llm: LLMClient | None = None
+) -> dict[str, Any]:
+    """Run the already-written tests again after the Developer changed the code, and regrade.
+
+    With an llm, the Tester also re-checks any still-failing requirement for mistakes in its own test.
+    """
+    reqs = db.list_requirements(conn, project_id)
+    contract = db.get_artifact(conn, project_id, "contract")
+    saved = db.get_artifact(conn, project_id, "tests") or {}
+    written = {
+        r["code"]: {
+            "code": r["code"], "path": test_path(r["code"]),
+            "content": saved.get(test_path(r["code"]), ""),
+            "problems": [] if test_path(r["code"]) in saved else ["no test written"],
+        }
+        for r in reqs
+    }
+    result = runner.run_pytest(ws.root)
+    verdicts = grade(reqs, written, result)
+    reviews: dict[str, dict[str, Any]] = {}
+    if llm is not None:
+        result, verdicts, reviews = review_and_repair(conn, llm, ws, runner, project_id, reqs, contract, written, result, verdicts)
+    for r in reqs:
+        v = verdicts[r["code"]]
+        db.set_requirement_status(conn, project_id, r["code"], v["status"], v["detail"])
+        db.log_event(conn, project_id, "test", "tester", {"code": r["code"], **v})
+    summary = db.verified_summary(conn, project_id)
+    db.log_event(conn, project_id, "status", "tester", {"message": f"{summary['passing']} of {summary['total']} requirements verified passing.", **summary})
+    return {"verdicts": verdicts, "summary": summary, "run": result, "reviews": reviews}

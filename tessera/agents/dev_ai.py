@@ -136,11 +136,12 @@ def build_task(
     task: dict[str, Any],
     contract: dict[str, Any],
     requirements: list[dict[str, Any]],
+    prompt: str | None = None,
 ) -> dict[str, Any]:
     """Write one task's files. Returns {"ok", "files", "problems", "attempts"}; workspace is untouched on failure."""
     messages: list[dict[str, str]] = [
         {"role": "system", "content": DEV_SYSTEM},
-        {"role": "user", "content": build_prompt(task, contract, requirements, ws)},
+        {"role": "user", "content": prompt or build_prompt(task, contract, requirements, ws)},
     ]
     problems: list[str] = []
     for attempt in range(1, MAX_FIX_ROUNDS + 2):
@@ -175,6 +176,37 @@ def build_task(
                 },
             ]
     return {"ok": False, "files": [], "problems": problems, "attempts": MAX_FIX_ROUNDS + 1}
+
+
+def build_fix_prompt(
+    task: dict[str, Any],
+    contract: dict[str, Any],
+    requirements: list[dict[str, Any]],
+    ws: Workspace,
+    failures: dict[str, str],
+    test_sources: dict[str, str],
+) -> str:
+    """Ask the Developer to repair one task. It sees the independent tests and their failures, never edits them."""
+    by_code = {r["code"]: r for r in requirements}
+    current = "\n".join(f"=== FILE: {f} ===\n{ws.read(f)}=== END FILE ===" for f in task["files"] if ws.exists(f))
+    failing = "\n\n".join(
+        f"{code}: {by_code[code]['title']}\nACCEPTANCE: {by_code[code]['acceptance']}\n"
+        f"FAILING TESTS AND ERRORS:\n{text}"
+        for code, text in failures.items()
+    )
+    tests = "\n\n".join(f"-- {p}\n{c}" for p, c in test_sources.items())
+    return (
+        "FIX REQUEST. Independent tests written by the QA engineer fail against your code. "
+        "Fix the code so these requirements pass, without breaking anything that already works. "
+        "The tests are correct: do not change them and do not special-case them.\n\n"
+        f"TASK: {task['title']}\n{task['description']}\n\n"
+        f"FILES YOU MUST WRITE (exactly these, complete, no others):\n" + "\n".join(f"- {f}" for f in task["files"]) + "\n\n"
+        f"FAILING REQUIREMENTS:\n{failing}\n\n"
+        f"THE TESTS:\n{tests}\n\n"
+        f"ENDPOINTS YOUR ROUTER FILES MUST IMPLEMENT:\n{_json(endpoints_for_task(contract, task))}\n\n"
+        f"DATA MODEL:\n{_json(contract['entities'])}\n\n"
+        f"YOUR CURRENT CODE:\n{current}\n"
+    )
 
 
 def build_all(conn: sqlite3.Connection, llm: LLMClient, ws: Workspace, project_id: int) -> dict[str, Any]:

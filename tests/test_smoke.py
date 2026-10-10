@@ -62,7 +62,7 @@ def test_role_routing_and_usage_tracking():
     fake = FakeOpenAI()
     llm = LLMClient(make_settings(), client=fake)
     llm.chat("main", [{"role": "user", "content": "hi"}])
-    llm.chat("tester", [{"role": "user", "content": "hi"}])
+    llm.chat("status", [{"role": "user", "content": "hi"}])
     assert [c["model"] for c in fake.calls] == ["u", "n"]
     assert llm.tracker.total_tokens == 30
     assert llm.tracker.by_role["main"]["calls"] == 1
