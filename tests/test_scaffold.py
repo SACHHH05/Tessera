@@ -68,3 +68,10 @@ def test_paths_outside_the_allowed_set_are_refused(tmp_path, path):
     with pytest.raises(PathNotAllowed):
         ws.write_files({"app/routers/ok.py": "x = 1\n", path: "x = 1\n"})
     assert not (ws.root / "app/routers/ok.py").exists()  # nothing written when any path is bad
+
+
+def test_relative_workspace_path_still_reports_per_test_results(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    ws = Workspace.create(__import__("pathlib").Path("workspaces"), "project-1")  # relative, like try_dev.py
+    result = LocalRunner().run_pytest(__import__("pathlib").Path("workspaces/project-1"))
+    assert result.ok and len(result.tests) >= 4

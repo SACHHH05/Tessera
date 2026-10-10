@@ -23,6 +23,7 @@ from ..sandbox import Workspace
 from ..scaffold_spec import SCAFFOLD_SPEC
 
 MAX_FIX_ROUNDS = 2
+MAX_REPLY_TOKENS = 8000
 
 DEV_SYSTEM = f"""\
 You are the Developer on a small software team. You write production-quality Python for one task.
@@ -118,6 +119,16 @@ def check_files(task: dict[str, Any], files: dict[str, str]) -> list[str]:
     return problems
 
 
+def _save_debug(ws: Workspace, task: dict[str, Any], attempt: int, res: Any) -> None:
+    """Keep every raw reply in the workspace so a failed task can be inspected afterwards."""
+    slug = re.sub(r"[^a-z0-9]+", "_", task["title"].lower()).strip("_")[:40]
+    d = ws.root / ".dev_debug"
+    d.mkdir(exist_ok=True)
+    (d / f"{slug}_attempt{attempt}.txt").write_text(
+        f"finish_reason={res.finish_reason!r} completion_tokens={res.completion_tokens}\n\n{res.text}"
+    )
+
+
 def build_task(
     llm: LLMClient,
     ws: Workspace,
@@ -132,9 +143,17 @@ def build_task(
     ]
     problems: list[str] = []
     for attempt in range(1, MAX_FIX_ROUNDS + 2):
-        res = llm.chat("dev", messages, temperature=0.2, max_tokens=12000)
+        res = llm.chat("dev", messages, temperature=0.2, max_tokens=MAX_REPLY_TOKENS)
+        _save_debug(ws, task, attempt, res)
         files = parse_file_blocks(res.text)
-        problems = check_files(task, files) if files else ["no file blocks found in your reply; use the exact format"]
+        truncated = res.finish_reason == "length"
+        if truncated:
+            problems = [
+                "your reply was cut off because it was too long. Write shorter, simpler code: "
+                "fewer helper functions, no long comments or docstrings, no unrequested extras"
+            ]
+        else:
+            problems = check_files(task, files) if files else ["no file blocks found in your reply; use the exact format"]
         if not problems:
             mine = {p: files[p] for p in task["files"]}
             snap = ws.snapshot(list(mine))
@@ -145,8 +164,9 @@ def build_task(
             ws.restore(snap)
             problems = [f"the app failed to start with your files:\n{err}"]
         if attempt <= MAX_FIX_ROUNDS:
+            if not truncated:  # a cut-off reply is garbage; do not feed it back
+                messages.append({"role": "assistant", "content": res.text})
             messages += [
-                {"role": "assistant", "content": res.text},
                 {
                     "role": "user",
                     "content": "Problems found:\n- " + "\n- ".join(problems)

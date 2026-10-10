@@ -67,22 +67,22 @@ GOOD = blocks({"app/migrations/001_notes.sql": MIGRATION, "app/routers/notes.py"
 
 
 class Scripted:
-    def __init__(self, *replies):
-        self.replies, self.calls = list(replies), []
+    def __init__(self, *replies, reasons=()):
+        self.replies, self.calls, self.reasons = list(replies), [], list(reasons)
         outer = self
 
         class C:
             def create(self, **kw):
                 outer.calls.append(kw)
                 msg = SimpleNamespace(content=outer.replies.pop(0))
-                return SimpleNamespace(choices=[SimpleNamespace(message=msg)],
+                return SimpleNamespace(choices=[SimpleNamespace(message=msg, finish_reason=outer.reasons.pop(0) if outer.reasons else "stop")],
                                        usage=SimpleNamespace(prompt_tokens=5, completion_tokens=5))
 
         self.chat = SimpleNamespace(completions=C())
 
 
-def llm(*replies):
-    fake = Scripted(*replies)
+def llm(*replies, reasons=()):
+    fake = Scripted(*replies, reasons=reasons)
     return LLMClient(Settings("k", "http://x/v1/", "u", "s", "n", "", ":memory:", 3, 100000), client=fake), fake
 
 
@@ -153,3 +153,14 @@ def test_build_all_updates_the_board(tmp_path):
     status = {r["code"]: r["status"] for r in db.list_requirements(conn, pid)}
     assert status["REQ-002"] == "built" and status["REQ-003"] == "built" and status["REQ-004"] == "pending"
     assert db.events_since(conn, pid)[-1]["kind"] == "build"
+
+
+def test_cut_off_reply_is_not_accepted_or_fed_back(tmp_path):
+    ws = Workspace.create(tmp_path, "p")
+    cut = "=== FILE: app/routers/notes.py ===\nrouter = 1\n"  # looks parseable but was truncated
+    model, fake = llm(cut, GOOD, reasons=["length", "stop"])
+    out = dev_ai.build_task(model, ws, TASK, CONTRACT, REQS)
+    assert out["ok"] and out["attempts"] == 2
+    second = fake.calls[1]["messages"]
+    assert "cut off" in second[-1]["content"] and all(m["content"] != cut for m in second)
+    assert list((ws.root / ".dev_debug").glob("notes_attempt*.txt"))  # raw replies are kept for inspection

@@ -107,3 +107,13 @@ def test_parse_file_blocks_tolerates_missing_end_marker():
 
     text = "=== FILE: app/routers/a.py ===\nx = 1\n=== FILE: app/routers/b.py ===\ny = 2\n"
     assert parse_file_blocks(text) == {"app/routers/a.py": "x = 1\n", "app/routers/b.py": "y = 2\n"}
+
+
+def test_parse_file_blocks_tolerates_wrapped_and_unclosed_headers():
+    from tessera.fileblocks import parse_file_blocks
+
+    # seen from the real model: the closing === wrapped onto its own line
+    wrapped = "=== FILE: app/migrations/002_a.sql\n===\nCREATE TABLE a (id INT);\n=== END FILE ===\n"
+    assert parse_file_blocks(wrapped) == {"app/migrations/002_a.sql": "CREATE TABLE a (id INT);\n"}
+    bare = "=== FILE: app/routers/b.py\nx = 1\n=== END FILE ===\n"
+    assert parse_file_blocks(bare) == {"app/routers/b.py": "x = 1\n"}

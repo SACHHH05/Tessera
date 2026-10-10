@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import re
 
-_HEADER = re.compile(r"^=== FILE: (?P<path>\S+) ===[ \t]*$", re.MULTILINE)
+# Header is "=== FILE: path ===". Models sometimes drop the closing "===" or wrap it onto the next line.
+_HEADER = re.compile(
+    r"^=== FILE:[ \t]*(?P<path>[^\s=]+)[ \t]*(?:===)?[ \t]*(?:\n===[ \t]*)?$", re.MULTILINE
+)
 _END = re.compile(r"^=== END FILE ===[ \t]*$", re.MULTILINE)
 _FENCE_LINE = re.compile(r"\A```[a-zA-Z0-9]*\n|\n```\s*\Z")
 

@@ -35,6 +35,7 @@ class LLMResult:
     prompt_tokens: int
     completion_tokens: int
     latency_s: float
+    finish_reason: str = ""
 
     @property
     def total_tokens(self) -> int:
@@ -141,6 +142,7 @@ class LLMClient:
                 prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
                 completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
                 latency_s=latency,
+                finish_reason=str(getattr(resp.choices[0], "finish_reason", "") or ""),
             )
             self.tracker.add(res)
             if self.on_call:

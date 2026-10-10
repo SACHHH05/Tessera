@@ -36,7 +36,7 @@ class Workspace:
     """One project's working copy of the scaffold."""
 
     def __init__(self, root: Path) -> None:
-        self.root = Path(root)
+        self.root = Path(root).resolve()
 
     @classmethod
     def create(cls, base: Path, name: str, fresh: bool = True) -> "Workspace":
@@ -156,7 +156,7 @@ class LocalRunner:
     """Dev-only. Do NOT point this at untrusted generated code in the hosted demo."""
 
     def run_pytest(self, workdir: Path, timeout_s: int = 90) -> RunResult:
-        workdir = Path(workdir)
+        workdir = Path(workdir).resolve()
         report = workdir / ".report.xml"
         report.unlink(missing_ok=True)
         env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
