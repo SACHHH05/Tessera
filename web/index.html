@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tessera</title>
+<meta name="description" content="Describe a small SaaS app. An AI team builds it, and independent tests prove which requirements work.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --grout: #e9ecea;
+  --slab: #f6f7f5;
+  --line: #c9cfcc;
+  --ink: #1b2124;
+  --ink-soft: #566066;
+  --lapis: #28458f;
+  --verdigris: #1f7a68;
+  --smalt: #c79a1e;
+  --madder: #a8323f;
+  --sans: "Bricolage Grotesque", system-ui, sans-serif;
+  --serif: "Newsreader", Georgia, serif;
+  --code: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { background: var(--grout); color: var(--ink); }
+body { margin: 0; font: 400 16px/1.5 var(--sans); min-height: 100vh; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--lapis); outline-offset: 2px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px 80px; }
+
+/* top bar */
+.top { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; padding: 22px 0 18px; border-bottom: 2px solid var(--ink); }
+.brand { font-weight: 800; font-size: 26px; letter-spacing: -0.02em; margin-right: auto; }
+.brand small { display: block; font: 400 14px/1.3 var(--serif); letter-spacing: 0; color: var(--ink-soft); }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.field { padding: 9px 12px; background: var(--slab); border: 1.5px solid var(--ink); border-radius: 3px; min-width: 0; }
+input.idea { width: min(380px, 80vw); }
+input.code { width: 120px; }
+.btn { padding: 9px 16px; border: 1.5px solid var(--ink); border-radius: 3px; background: var(--ink); color: var(--slab); font-weight: 600; cursor: pointer; }
+.btn.quiet { background: var(--slab); color: var(--ink); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:hover:not(:disabled) { background: var(--lapis); border-color: var(--lapis); color: #fff; }
+.note { font: 400 14px/1.4 var(--serif); color: var(--ink-soft); }
+
+/* headline */
+.head { padding: 34px 0 10px; display: grid; gap: 6px; }
+.idea-line { font: 400 20px/1.35 var(--serif); font-style: italic; color: var(--ink-soft); max-width: 60ch; }
+.verdict { font-weight: 800; font-size: clamp(32px, 6vw, 60px); line-height: 1.02; letter-spacing: -0.03em; margin: 0; max-width: 20ch; }
+.verdict .of { color: var(--ink-soft); font-weight: 400; }
+.phases { display: flex; flex-wrap: wrap; gap: 6px 4px; margin-top: 14px; }
+.phase { padding: 4px 10px; border-radius: 3px; font-size: 14px; font-weight: 600; color: var(--ink-soft); border: 1.5px solid var(--line); }
+.phase.done { color: var(--verdigris); border-color: var(--verdigris); }
+.phase.now { background: var(--lapis); border-color: var(--lapis); color: #fff; }
+
+/* main grid */
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 0 44px; margin-top: 26px; }
+.col-side { border-left: 2px solid var(--line); padding-left: 28px; }
+h2 { font: 800 19px/1.2 var(--sans); letter-spacing: -0.01em; margin: 0 0 12px; }
+section { margin-bottom: 40px; }
+
+/* mosaic */
+.mosaic { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 6px; }
+.tile { position: relative; aspect-ratio: 1 / 1; padding: 11px; text-align: left; cursor: pointer; border: 1.5px solid var(--line); border-radius: 3px; background: var(--slab); display: flex; flex-direction: column; justify-content: space-between; transition: background .25s, border-color .25s, color .25s; }
+.tile .code { font-weight: 800; font-size: 15px; }
+.tile .name { font-size: 14px; line-height: 1.2; font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.tile .state { font-size: 13px; font-weight: 600; opacity: .9; }
+.tile[aria-pressed="true"] { outline: 3px solid var(--ink); outline-offset: 2px; }
+.tile.s-building { background: var(--smalt); border-color: var(--smalt); color: #1d1500; animation: breathe 2.6s ease-in-out infinite; }
+.tile.s-built { background: #f1e3b0; border-color: var(--smalt); }
+.tile.s-passing { background: var(--verdigris); border-color: var(--verdigris); color: #fff; }
+.tile.s-failing { background: var(--madder); border-color: var(--madder); color: #fff; }
+.tile.s-untested { background: repeating-linear-gradient(135deg, var(--slab) 0 7px, var(--grout) 7px 14px); }
+.tile.set { animation: settle .55s cubic-bezier(.2,.9,.3,1.2); }
+@keyframes settle { 0% { transform: translateY(-9px) scale(1.04); box-shadow: 0 10px 0 -6px rgba(27,33,36,.35); } 100% { transform: none; box-shadow: none; } }
+@keyframes breathe { 50% { filter: brightness(1.12); } }
+.empty { padding: 36px 0; font: 400 18px/1.4 var(--serif); color: var(--ink-soft); max-width: 46ch; }
+
+/* detail */
+.detail { margin-top: 18px; padding: 18px 20px; background: var(--slab); border-left: 6px solid var(--line); }
+.detail.s-passing { border-color: var(--verdigris); } .detail.s-failing { border-color: var(--madder); } .detail.s-building { border-color: var(--smalt); }
+.detail h3 { margin: 0 0 4px; font-size: 20px; letter-spacing: -0.01em; }
+.detail p { margin: 8px 0 0; font: 400 17px/1.5 var(--serif); max-width: 62ch; }
+.detail .why { font: 600 14px/1.4 var(--sans); color: var(--ink-soft); margin-top: 12px; }
+.detail pre { margin: 10px 0 0; padding: 10px 12px; background: var(--grout); font: 13px/1.5 var(--code); white-space: pre-wrap; word-break: break-word; max-height: 190px; overflow: auto; }
+
+/* crew */
+.crew { display: grid; gap: 0; }
+.agent { padding: 10px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 14px 1fr auto; gap: 2px 10px; align-items: baseline; }
+.agent .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); align-self: center; }
+.agent.active .dot { background: var(--smalt); box-shadow: 0 0 0 4px rgba(199,154,30,.28); }
+.agent .who { font-weight: 800; }
+.agent .model { grid-column: 2; font-size: 14px; color: var(--ink-soft); }
+.agent .usage { grid-row: 1; grid-column: 3; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.total { margin-top: 12px; font: 400 15px/1.45 var(--serif); color: var(--ink-soft); }
+.total b { font: 800 22px var(--sans); color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* feed */
+.feed { list-style: none; padding: 0; margin: 0; max-width: 70ch; }
+.feed li { display: grid; grid-template-columns: 78px 1fr; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--line); font: 400 17px/1.45 var(--serif); }
+.feed .by { font: 800 14px var(--sans); padding-top: 3px; }
+.by.main { color: var(--lapis); } .by.tl { color: #6b4aa0; } .by.dev { color: #8a6500; } .by.tester { color: var(--verdigris); } .by.system { color: var(--ink-soft); }
+.feed li.bad .msg { color: var(--madder); }
+.feed li.good .msg { color: var(--verdigris); font-weight: 500; }
+
+/* files */
+.files { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 20px; }
+.flist { display: grid; align-content: start; gap: 2px; }
+.flist button { text-align: left; padding: 6px 8px; border: 0; background: transparent; border-radius: 3px; cursor: pointer; font-size: 14px; overflow-wrap: anywhere; }
+.flist button[aria-current="true"] { background: var(--ink); color: #fff; }
+.flist .group { font-weight: 800; font-size: 14px; margin: 10px 0 2px; }
+.code-view { background: var(--slab); border: 1.5px solid var(--line); padding: 14px; font: 13px/1.55 var(--code); overflow: auto; max-height: 520px; white-space: pre; min-height: 120px; }
+
+.error { margin: 18px 0; padding: 12px 14px; background: #f3dcdf; border-left: 6px solid var(--madder); font-weight: 600; }
+
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 1fr; }
+  .col-side { border-left: 0; padding-left: 0; border-top: 2px solid var(--line); padding-top: 22px; }
+  .files { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tile, .tile.set, .tile.s-building { animation: none; transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">Tessera<small>An AI software team that proves what it built</small></div>
+    <div class="controls">
+      <label class="visually" style="position:absolute;left:-9999px" for="idea">App idea</label>
+      <input id="idea" class="field idea" placeholder="Describe a small app, like a booking tool for a salon" maxlength="400" autocomplete="off">
+      <input id="code" class="field code" placeholder="Access code" style="display:none" autocomplete="off">
+      <button id="run" class="btn">Build it live</button>
+      <select id="replays" class="field" aria-label="Recorded runs"><option value="">Watch a recorded run</option></select>
+    </div>
+  </header>
+
+  <div id="error" class="error" hidden></div>
+
+  <div class="head">
+    <div id="idea-line" class="idea-line"></div>
+    <h1 id="verdict" class="verdict">Describe an app, or watch a recorded run.</h1>
+    <div id="phases" class="phases" aria-label="Progress"></div>
+  </div>
+
+  <div class="grid">
+    <main>
+      <section aria-labelledby="h-req">
+        <h2 id="h-req">Requirements</h2>
+        <div id="mosaic" class="mosaic" role="list"></div>
+        <div id="empty" class="empty">Each requirement becomes a tile. A tile turns green only when an independent test, written without seeing the code, passes against the built app.</div>
+        <div id="detail" class="detail" hidden></div>
+      </section>
+      <section aria-labelledby="h-feed">
+        <h2 id="h-feed">What the team is doing</h2>
+        <ol id="feed" class="feed"></ol>
+      </section>
+      <section aria-labelledby="h-files" id="files-section" hidden>
+        <h2 id="h-files">The app they built</h2>
+        <div class="files"><div id="flist" class="flist"></div><pre id="code-view" class="code-view" tabindex="0"></pre></div>
+      </section>
+    </main>
+    <aside class="col-side" aria-label="The team">
+      <section>
+        <h2>The team</h2>
+        <div id="crew" class="crew"></div>
+        <p id="total" class="total"></p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const ROLES = [
+  { id: "main", name: "Main AI", job: "Turns the idea into requirements" },
+  { id: "tl", name: "Tech lead", job: "Plans the API and the tasks" },
+  { id: "dev", name: "Developer", job: "Writes the code" },
+  { id: "tester", name: "Tester", job: "Writes independent tests" },
+];
+const STATE_LABEL = { pending: "Waiting", building: "Being built", built: "Built, untested", passing: "Verified", failing: "Failing", untested: "No valid test" };
+const PHASES = [["intake", "Brief"], ["plan", "Plan"], ["build", "Build"], ["verify", "Test"], ["fix", "Fix"]];
+
+let config = { live_enabled: false, needs_code: false, roles: {} };
+let S;           // everything shown on the page, derived from events
+let selected = null;
+let source = null; // {kind:"live"|"replay", ...}
+let timer = null;
+let fileChoice = null;
+
+function fresh() {
+  return { idea: "", reqs: new Map(), order: [], phase: null, doneStages: new Set(), feed: [], usage: {}, models: {}, lastActor: null,
+           lastActorAt: 0, files: {}, finished: false, error: "", clock: 0, justSet: new Set() };
+}
+
+function short(model) {
+  if (!model) return "";
+  return model.replace(/^nvidia\//i, "").replace(/NVIDIA-/i, "").replace(/-/g, " ").replace(/(\d)b/i, "$1B");
+}
+
+function shortCode(c) { return c.replace("REQ-", "R"); }
+
+/* ---------- turn one event into page state ---------- */
+function apply(ev) {
+  const p = ev.payload || {}, a = ev.actor;
+  S.clock = ev.ts;
+  if (ev.kind === "phase") {
+    if (p.stage === "start") { S.idea = p.idea || S.idea; return say("system", "Project started."); }
+    if (S.phase && S.phase !== p.stage) S.doneStages.add(S.phase);
+    S.phase = p.stage;
+    const text = { intake: "Reading the idea and drafting requirements.", plan: "Designing the API and splitting the work into tasks.", build: "Writing the code.", verify: "Writing independent tests and running them against the app.", fix: "Sending failing requirements back to the developer." }[p.stage];
+    return text && say(a === "system" ? "system" : a, text);
+  }
+  if (ev.kind === "llm_call") {
+    const u = S.usage[a] || (S.usage[a] = { calls: 0, tokens: 0 });
+    u.calls += 1; u.tokens += p.tokens || 0; S.models[a] = p.model || S.models[a];
+    S.lastActor = a; S.lastActorAt = ev.ts; return;
+  }
+  if (ev.kind === "requirements") {
+    (p.items || []).forEach((r) => { if (!S.reqs.has(r.code)) S.order.push(r.code); S.reqs.set(r.code, { ...r, status: "pending", detail: "", testNote: "" }); });
+    return say("main", `Wrote ${p.count} requirements, each with a test the Tester can check over HTTP.` + (p.assumptions && p.assumptions.length ? ` Assumed: ${p.assumptions.slice(0, 2).join("; ")}.` : ""));
+  }
+  if (ev.kind === "plan") return;
+  if (ev.kind === "req") {
+    const r = S.reqs.get(p.code); if (!r) return;
+    if (r.status !== p.status) { r.status = p.status; if (p.status === "passing") S.justSet.add(p.code); }
+    r.detail = p.detail || "";
+    return;
+  }
+  if (ev.kind === "build") return say("dev", `Built ${p.task}: ${p.files.map((f) => f.split("/").pop()).join(", ")}${p.attempts > 1 ? ` (took ${p.attempts} tries)` : ""}.`);
+  if (ev.kind === "build_failed") return say("dev", `Could not finish ${p.task}. ${(p.problems || [""])[0].split("\n")[0]}`, "bad");
+  if (ev.kind === "test") {
+    const r = S.reqs.get(p.code); if (!r) return;
+    r.testNote = p.detail || "";
+    return say("tester", p.status === "passing" ? `${p.code} verified: ${p.detail}.` : `${p.code} ${p.status === "untested" ? "has no usable test" : "fails"}.`, p.status === "passing" ? "good" : "bad");
+  }
+  if (ev.kind === "test_review") return say("tester", `Re-read my own test for ${p.code}: ${p.verdict === "TEST_WRONG" ? "my test was wrong, rewrote it." : p.verdict === "APP_WRONG" ? "the app is wrong." : "not sure."} ${p.reason || ""}`);
+  if (ev.kind === "fix") return say("dev", `Fix round ${p.round}: ${p.ok ? "updated" : "could not update"} ${p.task} for ${p.codes.join(", ")}.`, p.ok ? "" : "bad");
+  if (ev.kind === "standup" || ev.kind === "status") return say(a, p.message);
+  if (ev.kind === "done") { S.finished = true; return say("main", p.complete ? `Done. All ${p.total} requirements verified.` : `Done. ${p.passing} of ${p.total} verified; the rest are marked failing with their reasons.`, p.complete ? "good" : ""); }
+  if (ev.kind === "error") { S.error = p.message; S.finished = true; }
+}
+function say(actor, text, tone = "") { if (text) S.feed.unshift({ actor, text, tone }); }
+
+/* ---------- drawing ---------- */
+function counts() {
+  const all = [...S.reqs.values()];
+  return { total: all.length, passing: all.filter((r) => r.status === "passing").length, failing: all.filter((r) => r.status === "failing").length };
+}
+
+function render() {
+  const c = counts();
+  $("idea-line").textContent = S.idea ? `“${S.idea}”` : "";
+  const v = $("verdict");
+  if (!c.total) v.textContent = source ? "Getting started" : "Describe an app, or watch a recorded run.";
+  else v.innerHTML = `${c.passing} <span class="of">of ${c.total}</span> requirements verified${S.finished && c.passing === c.total ? "" : S.finished ? "" : "…"}`;
+  $("phases").innerHTML = source ? PHASES.map(([id, label]) => `<span class="phase ${S.doneStages.has(id) ? "done" : S.phase === id && !S.finished ? "now" : ""}">${label}</span>`).join("") : "";
+
+  const mosaic = $("mosaic");
+  mosaic.innerHTML = "";
+  S.order.forEach((code) => {
+    const r = S.reqs.get(code), b = document.createElement("button");
+    b.className = `tile s-${r.status}` + (S.justSet.has(code) ? " set" : "");
+    b.setAttribute("role", "listitem"); b.setAttribute("aria-pressed", selected === code);
+    b.innerHTML = `<span class="code">${code}</span><span class="name"></span><span class="state">${STATE_LABEL[r.status] || r.status}</span>`;
+    b.querySelector(".name").textContent = r.title;
+    b.onclick = () => { selected = selected === code ? null : code; render(); };
+    mosaic.appendChild(b);
+  });
+  S.justSet.clear();
+  $("empty").hidden = S.order.length > 0;
+
+  const d = $("detail");
+  const r = selected && S.reqs.get(selected);
+  d.hidden = !r;
+  if (r) {
+    d.className = `detail s-${r.status}`;
+    const why = r.status === "passing" ? "Passed an independent test. The Tester wrote it from the requirement and the API plan, and never saw the code."
+      : r.status === "failing" ? "The independent test failed against the built app." : r.status === "untested" ? "The Tester could not produce a usable test for this requirement." : "";
+    d.innerHTML = `<h3></h3><p></p><div class="why"></div>` + (r.status === "failing" && (r.detail || r.testNote) ? `<pre></pre>` : "");
+    d.querySelector("h3").textContent = `${r.code} ${r.title}`;
+    d.querySelector("p").textContent = r.acceptance;
+    d.querySelector(".why").textContent = `${STATE_LABEL[r.status]}. ${why}`;
+    const pre = d.querySelector("pre"); if (pre) pre.textContent = (r.detail || r.testNote).slice(0, 900);
+  }
+
+  const now = S.clock;
+  $("crew").innerHTML = ROLES.map((role) => {
+    const u = S.usage[role.id] || { calls: 0, tokens: 0 };
+    const model = short(S.models[role.id] || (config.roles[role.id] || {}).model);
+    const active = !S.finished && S.lastActor === role.id && now - S.lastActorAt < 12;
+    return `<div class="agent ${active ? "active" : ""}"><span class="dot"></span><span class="who">${role.name}</span><span class="usage">${u.calls ? u.calls + (u.calls === 1 ? " call" : " calls") : ""}</span><span class="model">${model ? "Nemotron " + model.replace(/nemotron/i, "").trim() : role.job}</span></div>`;
+  }).join("");
+  const tokens = Object.values(S.usage).reduce((n, u) => n + u.tokens, 0);
+  $("total").innerHTML = tokens ? `<b>${tokens.toLocaleString()}</b> tokens used, all through Nebius Token Factory.` : "Every call goes through Nebius Token Factory.";
+
+  $("feed").innerHTML = S.feed.slice(0, 60).map((f) => `<li class="${f.tone}"><span class="by ${f.actor}">${(ROLES.find((x) => x.id === f.actor) || { name: "Tessera" }).name}</span><span class="msg"></span></li>`).join("");
+  [...$("feed").children].forEach((li, i) => { li.querySelector(".msg").textContent = S.feed[i].text; });
+
+  $("error").hidden = !S.error; $("error").textContent = S.error ? `The run stopped: ${S.error}` : "";
+  renderFiles();
+}
+
+function renderFiles() {
+  const names = Object.keys(S.files).sort();
+  $("files-section").hidden = names.length === 0;
+  if (!names.length) return;
+  if (!fileChoice || !S.files[fileChoice]) fileChoice = names.find((n) => n.startsWith("app/routers/")) || names[0];
+  const groups = [["app/routers/", "Code"], ["app/migrations/", "Database"], ["tests/", "Independent tests"]];
+  $("flist").innerHTML = groups.map(([prefix, label]) => {
+    const items = names.filter((n) => n.startsWith(prefix));
+    return items.length ? `<div class="group">${label}</div>` + items.map((n) => `<button data-f="${n}" ${n === fileChoice ? 'aria-current="true"' : ""}>${n.split("/").pop()}</button>`).join("") : "";
+  }).join("");
+  $("flist").querySelectorAll("button").forEach((b) => (b.onclick = () => { fileChoice = b.dataset.f; renderFiles(); }));
+  $("code-view").textContent = S.files[fileChoice];
+}
+
+/* ---------- live ---------- */
+function stop() { if (timer) { clearTimeout(timer); timer = null; } source = null; }
+
+async function startLive(pid) {
+  stop(); S = fresh(); selected = null; fileChoice = null; source = { kind: "live", pid, last: 0 };
+  $("run").disabled = true; render();
+  const poll = async () => {
+    if (!source || source.pid !== pid) return;
+    try {
+      const r = await fetch(`/api/projects/${pid}/events?after=${source.last}`);
+      const data = await r.json();
+      if (!S.idea) S.idea = data.project.idea;
+      data.events.forEach((ev) => { ev.ts = ev.ts - (source.t0 ??= ev.ts); apply(ev); source.last = ev.id; });
+      if (data.events.length) S.clock = data.events[data.events.length - 1].ts;
+      if (data.finished) {
+        const f = await (await fetch(`/api/projects/${pid}/files`)).json(); S.files = f; S.finished = true;
+        $("run").disabled = false; render(); source = null; return;
+      }
+      render();
+    } catch (e) { S.error = "Lost connection to the server."; render(); }
+    timer = setTimeout(poll, 1200);
+  };
+  poll();
+}
+
+/* ---------- replay ---------- */
+async function startReplay(name) {
+  stop(); S = fresh(); selected = null; fileChoice = null; render();
+  const rep = await (await fetch(`/api/replays/${encodeURIComponent(name)}`)).json();
+  S.idea = rep.meta.idea; source = { kind: "replay", name };
+  // Real runs take minutes. Compress to about 100 seconds and never wait more than 2.5s between events.
+  const speed = Math.max(1, rep.meta.duration_s / 100);
+  let i = 0, prev = 0;
+  const step = () => {
+    if (!source || source.name !== name) return;
+    if (i >= rep.events.length) { S.files = rep.files; S.finished = true; render(); return; }
+    const ev = rep.events[i++];
+    apply(ev); render();
+    const wait = Math.min(2500, ((rep.events[i] ? rep.events[i].ts : ev.ts) - ev.ts) * 1000 / speed);
+    timer = setTimeout(step, wait);
+  };
+  step();
+}
+
+/* ---------- wiring ---------- */
+async function init() {
+  S = fresh(); render();
+  try { config = await (await fetch("/api/config")).json(); } catch (e) {}
+  $("code").style.display = config.needs_code ? "" : "none";
+  if (!config.live_enabled) { $("run").disabled = true; $("idea").disabled = true; $("idea").placeholder = "Live builds are switched off on this server"; }
+  const reps = await (await fetch("/api/replays")).json().catch(() => []);
+  const sel = $("replays");
+  reps.forEach((r) => { const o = document.createElement("option"); o.value = r.name; o.textContent = `${r.title} (${r.summary.passing} of ${r.summary.total} verified)`; sel.appendChild(o); });
+  sel.onchange = () => sel.value && startReplay(sel.value);
+  $("run").onclick = async () => {
+    const idea = $("idea").value.trim(); if (idea.length < 3) { $("idea").focus(); return; }
+    $("run").disabled = true;
+    const res = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idea, code: $("code").value }) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) { $("run").disabled = false; S.error = typeof body.detail === "string" ? body.detail : "That request was not accepted."; render(); return; }
+    startLive(body.project_id);
+  };
+  $("idea").addEventListener("keydown", (e) => e.key === "Enter" && $("run").click());
+  const q = new URLSearchParams(location.search);
+  if (q.get("replay")) { sel.value = q.get("replay"); startReplay(q.get("replay")); }
+  else if (reps.length && !q.get("blank")) { sel.value = reps[0].name; startReplay(reps[0].name); }
+}
+init();
+</script>
+</body>
+</html>
