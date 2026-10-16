@@ -238,7 +238,8 @@ def build_all(conn: sqlite3.Connection, llm: LLMClient, ws: Workspace, project_i
                 db.set_requirement_status(conn, project_id, code, "built")
             db.log_event(
                 conn, project_id, "build", "dev",
-                {"task": task["title"], "files": out["files"], "attempts": out["attempts"]},
+                {"task": task["title"], "files": out["files"], "attempts": out["attempts"],
+                 "codes": task["requirement_codes"]},
             )
         else:
             db.set_task_status(conn, row["id"], "blocked")

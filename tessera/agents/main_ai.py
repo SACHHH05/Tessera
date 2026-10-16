@@ -180,6 +180,13 @@ def run_intake(
         project_id,
         "requirements",
         "main",
-        {"count": len(out["requirements"]), "assumptions": out["assumptions"]},
+        {
+            "count": len(out["requirements"]),
+            "assumptions": out["assumptions"],
+            "items": [
+                {"code": r["code"], "title": r["title"], "acceptance": r["acceptance"]}
+                for r in db.list_requirements(conn, project_id)
+            ],
+        },
     )
     return {**out, "sources": research}

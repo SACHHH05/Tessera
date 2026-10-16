@@ -50,7 +50,10 @@ def test_db_requirement_board():
     db.set_requirement_status(conn, pid, "REQ-002", "failing", "500 on POST /book")
     assert db.verified_summary(conn, pid) == {"total": 2, "passing": 1, "failing": 1}
     db.log_event(conn, pid, "standup", "tl", {"msg": "hi"})
-    assert db.events_since(conn, pid, 0)[0]["payload"] == {"msg": "hi"}
+    events = db.events_since(conn, pid, 0)
+    assert [e["kind"] for e in events] == ["req", "req", "standup"]  # status changes are events too
+    assert events[1]["payload"] == {"code": "REQ-002", "status": "failing", "detail": "500 on POST /book"}
+    assert events[-1]["payload"] == {"msg": "hi"}
 
 
 def test_parse_json_tolerates_fences_and_prose():

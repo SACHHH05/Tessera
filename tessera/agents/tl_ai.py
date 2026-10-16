@@ -355,6 +355,21 @@ def plan_project(conn: sqlite3.Connection, llm: LLMClient, project_id: int) -> d
     db.log_event(
         conn,
         project_id,
+        "plan",
+        "tl",
+        {
+            "tasks": [
+                {"title": t["title"], "requirement_codes": t["requirement_codes"], "files": t["files"]}
+                for t in plan["tasks"]
+            ],
+            "endpoints": [f"{e['method']} {e['path']}" for e in contract["endpoints"]],
+            "entities": [e["name"] for e in contract["entities"]],
+            "scaffold_provided": contract["scaffold_provided"],
+        },
+    )
+    db.log_event(
+        conn,
+        project_id,
         "standup",
         "tl",
         {
