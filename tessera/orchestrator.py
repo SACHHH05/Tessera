@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import db
-from .agents import dev_ai, main_ai, tester_ai, tl_ai
+from .agents import dev_ai, main_ai, status_ai, tester_ai, tl_ai
 from .llm import LLMClient
 from .sandbox import Runner, Workspace
 from .tavily import TavilyClient
@@ -84,6 +84,7 @@ def fix_failing(
         result = after
         history.append({"round": rnd, "failing_before": sorted(failing), "tasks_changed": changed, "summary": after["summary"]})
         say(f"  after round {rnd}: {after['summary']['passing']} of {after['summary']['total']} verified")
+        status_ai.post_update(conn, llm, project_id, "fix_round", Round=f"{rnd} of {rounds}")
     return history
 
 
@@ -118,17 +119,20 @@ def run_project(
         db.log_event(conn, project_id, "phase", "system", {"stage": "plan"})
         say("TL AI: designing the API and planning tasks...")
         out["plan_problems"] = tl_ai.plan_project(conn, llm, project_id)["problems"]
+        status_ai.post_update(conn, llm, project_id, "planned")
     if "build" in stages:
         db.log_event(conn, project_id, "phase", "system", {"stage": "build"})
         say("Developer AI: building...")
         built = dev_ai.build_all(conn, llm, ws, project_id)
         out["build"] = [{"task": r["task"], "ok": r["ok"], "attempts": r["attempts"]} for r in built["results"]]
+        status_ai.post_update(conn, llm, project_id, "built")
     if "verify" in stages:
         db.log_event(conn, project_id, "phase", "system", {"stage": "verify"})
         say("Tester AI: writing independent tests and running them...")
         verify_result = tester_ai.verify_project(conn, llm, ws, runner, project_id)
         s = verify_result["summary"]
         say(f"  {s['passing']} of {s['total']} requirements verified")
+        status_ai.post_update(conn, llm, project_id, "verified")
     if "fix" in stages:
         db.log_event(conn, project_id, "phase", "system", {"stage": "fix"})
         if verify_result is None:
@@ -138,6 +142,7 @@ def run_project(
     out["summary"] = db.verified_summary(conn, project_id)
     complete = out["summary"]["passing"] == out["summary"]["total"] and out["summary"]["total"] > 0
     db.set_project_status(conn, project_id, "verified" if complete else "needs_attention")
+    status_ai.post_update(conn, llm, project_id, "done")
     db.log_event(conn, project_id, "done", "main", {**out["summary"], "complete": complete})
     out["workspace"] = str(ws.root)
     return out

@@ -54,6 +54,9 @@ input.code { width: 120px; }
 .phase.done { color: var(--verdigris); border-color: var(--verdigris); }
 .phase.now { background: var(--lapis); border-color: var(--lapis); color: #fff; }
 
+.latest { margin: 16px 0 0; max-width: 56ch; font: 400 20px/1.45 var(--serif); }
+.latest:empty { display: none; }
+
 /* main grid */
 .grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 0 44px; margin-top: 26px; }
 .col-side { border-left: 2px solid var(--line); padding-left: 28px; }
@@ -100,7 +103,7 @@ section { margin-bottom: 40px; }
 .feed { list-style: none; padding: 0; margin: 0; max-width: 70ch; }
 .feed li { display: grid; grid-template-columns: 78px 1fr; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--line); font: 400 17px/1.45 var(--serif); }
 .feed .by { font: 800 14px var(--sans); padding-top: 3px; }
-.by.main { color: var(--lapis); } .by.tl { color: #6b4aa0; } .by.dev { color: #8a6500; } .by.tester { color: var(--verdigris); } .by.system { color: var(--ink-soft); }
+.by.main { color: var(--lapis); } .by.tl { color: #6b4aa0; } .by.dev { color: #8a6500; } .by.tester { color: var(--verdigris); } .by.status { color: #a14f2a; } .by.system { color: var(--ink-soft); }
 .feed li.bad .msg { color: var(--madder); }
 .feed li.good .msg { color: var(--verdigris); font-weight: 500; }
 
@@ -143,6 +146,7 @@ section { margin-bottom: 40px; }
     <div id="idea-line" class="idea-line"></div>
     <h1 id="verdict" class="verdict">Describe an app, or watch a recorded run.</h1>
     <div id="phases" class="phases" aria-label="Progress"></div>
+    <p id="latest" class="latest" aria-live="polite"></p>
   </div>
 
   <div class="grid">
@@ -180,6 +184,7 @@ const ROLES = [
   { id: "tl", name: "Tech lead", job: "Plans the API and the tasks" },
   { id: "dev", name: "Developer", job: "Writes the code" },
   { id: "tester", name: "Tester", job: "Writes independent tests" },
+  { id: "status", name: "Status writer", job: "Writes updates for you" },
 ];
 const STATE_LABEL = { pending: "Waiting", building: "Being built", built: "Built, untested", passing: "Verified", failing: "Failing", untested: "No valid test" };
 const PHASES = [["intake", "Brief"], ["plan", "Plan"], ["build", "Build"], ["verify", "Test"], ["fix", "Fix"]];
@@ -193,7 +198,7 @@ let fileChoice = null;
 
 function fresh() {
   return { idea: "", reqs: new Map(), order: [], phase: null, doneStages: new Set(), feed: [], usage: {}, models: {}, lastActor: null,
-           lastActorAt: 0, files: {}, finished: false, error: "", clock: 0, justSet: new Set() };
+           lastActorAt: 0, latest: "", files: {}, finished: false, error: "", clock: 0, justSet: new Set() };
 }
 
 function short(model) {
@@ -239,6 +244,7 @@ function apply(ev) {
   }
   if (ev.kind === "test_review") return say("tester", `Re-read my own test for ${p.code}: ${p.verdict === "TEST_WRONG" ? "my test was wrong, rewrote it." : p.verdict === "APP_WRONG" ? "the app is wrong." : "not sure."} ${p.reason || ""}`);
   if (ev.kind === "fix") return say("dev", `Fix round ${p.round}: ${p.ok ? "updated" : "could not update"} ${p.task} for ${p.codes.join(", ")}.`, p.ok ? "" : "bad");
+  if (ev.kind === "update") { S.latest = p.message; return say("status", p.message); }
   if (ev.kind === "standup" || ev.kind === "status") return say(a, p.message);
   if (ev.kind === "done") { S.finished = true; return say("main", p.complete ? `Done. All ${p.total} requirements verified.` : `Done. ${p.passing} of ${p.total} verified; the rest are marked failing with their reasons.`, p.complete ? "good" : ""); }
   if (ev.kind === "error") { S.error = p.message; S.finished = true; }
@@ -257,6 +263,7 @@ function render() {
   const v = $("verdict");
   if (!c.total) v.textContent = source ? "Getting started" : "Describe an app, or watch a recorded run.";
   else v.innerHTML = `${c.passing} <span class="of">of ${c.total}</span> requirements verified${S.finished && c.passing === c.total ? "" : S.finished ? "" : "…"}`;
+  $("latest").textContent = S.latest;
   $("phases").innerHTML = source ? PHASES.map(([id, label]) => `<span class="phase ${S.doneStages.has(id) ? "done" : S.phase === id && !S.finished ? "now" : ""}">${label}</span>`).join("") : "";
 
   const mosaic = $("mosaic");

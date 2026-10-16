@@ -60,7 +60,9 @@ class Agency:
             def create(self, **kw):
                 outer.calls.append(kw)
                 system, user = kw["messages"][0]["content"], kw["messages"][1]["content"]
-                if "account manager" in system:
+                if "client update" in system:
+                    text = "We finished a stage and are moving to the next one."
+                elif "account manager" in system:
                     text = json.dumps(REQUIREMENTS)
                 elif "Design the API contract" in system:
                     text = json.dumps(CONTRACT)
@@ -99,6 +101,7 @@ def test_bug_is_caught_sent_back_and_fixed(tmp_path):
     assert db.get_project(conn, pid)["status"] == "verified"
     kinds = [e["kind"] for e in db.events_since(conn, pid)]
     assert "test_review" in kinds and "fix" in kinds and kinds[-1] == "done"
+    assert kinds.count("update") == 5  # planned, built, verified, one fix round, done
     assert "AND user_id = ?" in (tmp_path / f"project-{pid}" / "app/routers/notes.py").read_text()
 
 
@@ -111,3 +114,28 @@ def test_an_unfixable_bug_is_reported_not_hidden(tmp_path):
     assert out["summary"] == {"total": 4, "passing": 3, "failing": 1}
     assert len(out["fix_rounds"]) == 2
     assert db.get_project(conn, out["project_id"])["status"] == "needs_attention"
+
+
+def test_status_updates_are_posted_and_survive_model_failure(tmp_path):
+    from tessera.agents import status_ai
+
+    conn = db.connect(":memory:")
+    pid = db.create_project(conn, "a notes app")
+    db.add_requirements(conn, pid, [{"title": "Sign up", "acceptance": "x"}, {"title": "Notes", "acceptance": "y"}])
+    db.set_requirement_status(conn, pid, "REQ-001", "passing")
+    db.set_requirement_status(conn, pid, "REQ-002", "failing", "500")
+
+    class Down:
+        def chat(self, *a, **k):
+            raise RuntimeError("model is down")
+
+    text = status_ai.post_update(conn, Down(), pid, "done")
+    assert text.startswith("Finished: 1 of 2 requirements verified")  # plain fallback, build not stopped
+    last = db.events_since(conn, pid)[-1]
+    assert last["kind"] == "update" and last["actor"] == "status" and last["payload"]["moment"] == "done"
+
+    class Wordy:
+        def chat(self, *a, **k):
+            return SimpleNamespace(text='<think>hmm</think> "We are  halfway there." ')
+
+    assert status_ai.post_update(conn, Wordy(), pid, "built") == "We are halfway there."
