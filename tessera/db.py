@@ -51,10 +51,18 @@ CREATE TABLE IF NOT EXISTS events (
 
 
 def connect(path: str = "tessera.db") -> sqlite3.Connection:
-    conn = sqlite3.connect(path, check_same_thread=False)
+    conn = sqlite3.connect(path, check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
+    if path != ":memory:":
+        conn.execute("PRAGMA journal_mode=WAL")  # the dashboard reads while the agents write
     conn.executescript(SCHEMA)
     return conn
+
+
+def db_file(conn: sqlite3.Connection) -> str | None:
+    """Path of the database file behind a connection, or None for in-memory databases."""
+    row = conn.execute("PRAGMA database_list").fetchone()
+    return row[2] or None
 
 
 def create_project(conn: sqlite3.Connection, idea: str) -> int:
@@ -100,6 +108,7 @@ def set_requirement_status(
         (status, detail, project_id, code),
     )
     conn.commit()
+    log_event(conn, project_id, "req", "board", {"code": code, "status": status, "detail": detail[:500]})
 
 
 def save_artifact(conn: sqlite3.Connection, project_id: int, kind: str, content: Any) -> None:

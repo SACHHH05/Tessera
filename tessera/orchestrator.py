@@ -21,6 +21,31 @@ STAGES = ["intake", "plan", "build", "verify", "fix"]
 MAX_FIX_ROUNDS = 2
 
 
+def _log_calls(llm: LLMClient, conn: sqlite3.Connection, project_id: int) -> None:
+    """Record every model call as an event (role, model, tokens, seconds) so the dashboard can show it.
+
+    Calls may come from worker threads, so each one writes through its own connection.
+    """
+    path = db.db_file(conn)
+    if not path:
+        return
+    previous = llm.on_call
+
+    def record(res: Any) -> None:
+        if previous:
+            previous(res)
+        c = db.connect(path)
+        try:
+            db.log_event(
+                c, project_id, "llm_call", res.role,
+                {"model": res.model, "tokens": res.total_tokens, "seconds": round(res.latency_s, 1)},
+            )
+        finally:
+            c.close()
+
+    llm.on_call = record
+
+
 def fix_failing(
     conn: sqlite3.Connection,
     llm: LLMClient,
@@ -81,25 +106,31 @@ def run_project(
             raise ValueError("Give either an idea or an existing project id.")
         project_id = db.create_project(conn, idea)
     out: dict[str, Any] = {"project_id": project_id}
+    _log_calls(llm, conn, project_id)
     ws = Workspace.create(workspaces, f"project-{project_id}", fresh="build" in stages)
     verify_result: Any = None
 
     if "intake" in stages:
+        db.log_event(conn, project_id, "phase", "system", {"stage": "intake"})
         say("Main AI: understanding the idea and drafting requirements...")
         main_ai.run_intake(conn, llm, tavily, project_id)
     if "plan" in stages:
+        db.log_event(conn, project_id, "phase", "system", {"stage": "plan"})
         say("TL AI: designing the API and planning tasks...")
         out["plan_problems"] = tl_ai.plan_project(conn, llm, project_id)["problems"]
     if "build" in stages:
+        db.log_event(conn, project_id, "phase", "system", {"stage": "build"})
         say("Developer AI: building...")
         built = dev_ai.build_all(conn, llm, ws, project_id)
         out["build"] = [{"task": r["task"], "ok": r["ok"], "attempts": r["attempts"]} for r in built["results"]]
     if "verify" in stages:
+        db.log_event(conn, project_id, "phase", "system", {"stage": "verify"})
         say("Tester AI: writing independent tests and running them...")
         verify_result = tester_ai.verify_project(conn, llm, ws, runner, project_id)
         s = verify_result["summary"]
         say(f"  {s['passing']} of {s['total']} requirements verified")
     if "fix" in stages:
+        db.log_event(conn, project_id, "phase", "system", {"stage": "fix"})
         if verify_result is None:
             verify_result = tester_ai.rerun(conn, ws, runner, project_id, llm)
         out["fix_rounds"] = fix_failing(conn, llm, ws, runner, project_id, verify_result, rounds, say)

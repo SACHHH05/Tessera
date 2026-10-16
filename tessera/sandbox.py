@@ -87,6 +87,16 @@ class Workspace:
             if p.name != "__init__.py"
         }
 
+    def generated_files(self) -> dict[str, str]:
+        """Everything the agents wrote: routers, migrations and the independent tests."""
+        out: dict[str, str] = {}
+        for subdir, pattern in (("app/routers", "*.py"), ("app/migrations", "*.sql"), ("tests", "test_req_*.py")):
+            for rel, content in self.files_under(subdir, pattern[1:]).items():
+                if rel.endswith("000_users.sql") or (subdir == "tests" and not Path(rel).name.startswith("test_req_")):
+                    continue
+                out[rel] = content
+        return out
+
     def snapshot(self, paths: list[str]) -> dict[str, str | None]:
         return {p: (self.read(p) if self.exists(p) else None) for p in paths}
 
